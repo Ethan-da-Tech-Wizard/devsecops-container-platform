@@ -3,7 +3,9 @@
 Document Identifier: TWU-SEC-WP-2026-V1  
 Classification: Technical Architecture & Engineering Specification  
 Audience: Systems Architects, Principal Security Engineers, Infrastructure Hiring Managers  
-Author: the maintainer (TWU LLC)  
+Author: The Maintainer <maintainer@example.invalid>  
+Organization: TWU LLC  
+License: MIT License 2026  
 Last Updated: November 2026  
 
 ---

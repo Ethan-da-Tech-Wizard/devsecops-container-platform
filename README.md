@@ -75,8 +75,8 @@ find scripts/ -type f -name "*.sh" -exec shellcheck {} +
 # 2. Python bytecode compilation
 python3 -m compileall -q scripts/
 
-# 3. YARA rule integrity & security test suite
-python3 -m unittest -v scripts/test_twu_yara_vet.py
+# 3. YARA rule integrity & platform security test suites
+python3 -m unittest discover -s scripts/ -p "test_*.py" -v
 ```
 
 ---
@@ -88,9 +88,12 @@ python3 -m unittest -v scripts/test_twu_yara_vet.py
 
 ---
 
-## 6. Author
+## 6. Author & License
 
 **The Maintainer**  
 Software Engineer | DevOps & DevSecOps | Applied AI & Linux Systems  
 GitHub: [github.com/Ethan-da-Tech-Wizard](https://github.com/Ethan-da-Tech-Wizard)  
-Email: maintainer@example.invalid
+Email: maintainer@example.invalid  
+Organization: TWU LLC  
+
+Licensed under the **MIT License 2026**. See [LICENSE](LICENSE) for details.

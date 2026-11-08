@@ -1,5 +1,8 @@
 # ==============================================================================
-# TWU DevSecOps Docker Build Context Exclusion Configuration (.dockerignore)
+# Program: DevSecOps Docker Build Context Exclusion Configuration (.dockerignore)
+# Programmer: The Maintainer <maintainer@example.invalid>
+# Organization: TWU LLC
+# License: MIT License 2026
 # Purpose: Minimizes build context size, prevents credential leaks, accelerates
 #          build speeds, and preserves Docker layer cache efficiency.
 # ==============================================================================
