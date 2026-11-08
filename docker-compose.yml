@@ -1,58 +1,132 @@
 # ==============================================================================
-# Production Docker Compose Orchestration: Hardened DevSecOps Platform
-# Architecture: Read-Only Root Filesystem with Least-Privilege Sandboxing
+# Program: DevSecOps Hardened Container Orchestration Specification
+# Programmer: The Maintainer <maintainer@example.invalid>
+# Organization: TWU LLC
+# License: MIT License 2026
+# Purpose: Define deterministic, production-grade container orchestration
+#          enforcing read-only root filesystems, full Linux kernel capability
+#          drops (ALL), no-new-privileges flags, tmpfs sandboxes, and strict
+#          cgroup resource limits to protect the host against DoS attacks.
+#
+# Threat Model & Attack Vectors Mitigated:
+#   1. Kernel Capability Exploits & Namespace Escapes (CWE-250):
+#      - Prevented by 'cap_drop: [ALL]', stripping all 41+ Linux capabilities (e.g. CAP_SYS_ADMIN,
+#        CAP_NET_RAW, CAP_DAC_OVERRIDE), rendering standard container breakout techniques impossible.
+#   2. Local Privilege Escalation via setuid/setgid Binaries (CVE-2021-3156 Baron Samedit, etc.):
+#      - Prevented by 'security_opt: [no-new-privileges:true]', which sets the PR_SET_NO_NEW_PRIVS
+#        kernel bit, blocking processes or their children from gaining elevated privileges through
+#        setuid/setgid binaries.
+#   3. Malware Persistence & Filesystem Tampering (CWE-732):
+#      - Prevented by 'read_only: true'. The container root filesystem is mounted completely read-only.
+#        Adversaries cannot overwrite binaries, plant backdoors, drop rootkits, or modify configuration files.
+#   4. Denial of Service (DoS) & Memory Exhaustion (CWE-400):
+#      - Prevented by explicit cgroup v2 resource limits ('limits: memory: 512M, cpus: "1.0"'),
+#        ensuring runaway processes cannot starve the host system, lock CPU cores, or trigger kernel OOM panics.
+#   5. Disk Exhaustion & Unsafe Temporary Storage:
+#      - Prevented by mounting volatile in-memory 'tmpfs: /tmp:size=64M,mode=1777', which isolates
+#        scratch files to RAM, restricts size, and automatically purges data upon container termination.
+#
+# Senior Interview Talking Points:
+#   - Defense-in-Depth Container Hardening: Why 'read_only: true' paired with volatile tmpfs represents
+#     the gold standard of container immutability, ensuring zero disk persistence for malicious payloads.
+#   - Linux Kernel Capability Pruning: How 'cap_drop: ALL' strips raw socket creation (CAP_NET_RAW),
+#     filesystem ownership changes (CAP_CHOWN), and namespace manipulations (CAP_SYS_ADMIN).
+#   - The PR_SET_NO_NEW_PRIVS Flag: Why setting 'no-new-privileges:true' is essential to block setuid binaries
+#     even if an attacker discovers an executable with permissions like '/usr/bin/sudo' or '/usr/bin/pkexec'.
+#   - cgroup v2 Enforcement: How strict limits prevent containerized processes from impacting host OS health.
 # ==============================================================================
 
-# Schema version definition for Docker Compose specification
 services:
   # Primary containerized threat detection and security scanning service
   scanner:
     # Service build context definition
     build:
-      # Build context root directory containing Dockerfile and source scripts
+      # Build context root directory containing Dockerfile and source scripts.
+      # Governed by .dockerignore to exclude git history, keys, and host artifacts.
       context: .
       # Explicit Dockerfile path within build context
       dockerfile: Dockerfile
-      # Target image tag for locally built container artifact
+
+    # Target image tag for locally built container artifact
     image: devsecops-platform:latest
-    # Container runtime display name for logging and inspection
+
+    # Container runtime display name for logging, inspection, and process accounting
     container_name: twu-devsecops-scanner
-    # Restart policy: do not automatically restart on exit or failure during ad-hoc batch runs
+
+    # Restart policy: 'no' ensures ad-hoc batch scanning processes do not infinitely loop on failure.
+    # Essential for deterministic CI/CD test runners and batch audit jobs.
     restart: "no"
 
     # ============================================================================
     # Security Context & Least-Privilege Hardening Directives
     # ============================================================================
-    # Enforce unprivileged execution as UID 10001 (appuser) and GID 10001 (appgroup)
-    # Prevents container processes from executing as root or mapping to host UID 0
+    # Enforce unprivileged execution as UID 10001 (appuser) and GID 10001 (appgroup).
+    # What it does:
+    #   Overrides container default UID 0 and enforces execution as an unprivileged service account.
+    # Why it is best-practice for security:
+    #   Prevents container processes from mapping to host UID 0, mitigating host takeover if a breakout occurs.
+    # Attack Vector Prevented:
+    #   Host root compromise via container escape vulnerabilities (CVE-2019-5736, Dirty COW/Pipe).
     user: "10001:10001"
 
     # Immutable root filesystem enforcement
-    # Prevents runtime malware persistence by mounting container root ('/') as read-only
+    # What it does:
+    #   Mounts the entire container root filesystem ('/') as read-only.
+    # Why it is best-practice for security:
+    #   Guarantees runtime immutability. Even if an attacker achieves remote code execution,
+    #   they cannot write to /etc, /usr, /bin, or modify application source scripts.
+    # Attack Vector Prevented:
+    #   Malware persistence, webshell installation, Trojan binary substitution, and runtime tampering.
     read_only: true
 
     # Drop all Linux kernel capabilities to minimize kernel attack surface
-    # Strips CAP_CHOWN, CAP_NET_ADMIN, CAP_SYS_ADMIN, and other privileged capabilities
+    # What it does:
+    #   Strips all POSIX capabilities granted to processes by the Linux kernel.
+    # Why it is best-practice for security:
+    #   By default, Docker grants a subset of capabilities (e.g., CAP_CHOWN, CAP_NET_RAW, CAP_MKNOD).
+    #   Dropping ALL capabilities prevents raw packet sniffing, arbitrary file ownership changes,
+    #   and device node creation.
+    # Attack Vector Prevented:
+    #   ARP spoofing, promiscuous network sniffing, unauthorized setuid modifications, and kernel exploits.
     cap_drop:
       - ALL
 
     # Prevent privilege escalation flags from granting setuid/setgid elevation
+    # What it does:
+    #   Enables the Linux kernel PR_SET_NO_NEW_PRIVS prctl flag for the container process tree.
+    # Why it is best-practice for security:
+    #   Ensures that child processes cannot acquire additional execution privileges through setuid binaries.
+    # Attack Vector Prevented:
+    #   Privilege escalation via local setuid/setgid binaries (e.g. Sudo Baron Samedit CVE-2021-3156).
     security_opt:
       - no-new-privileges:true
 
     # ============================================================================
     # Volatile Memory Mounts (tmpfs)
     # ============================================================================
-    # Mount writable ephemeral in-memory storage for necessary scratch operations
-    # Data written to tmpfs disappears when the container terminates and never touches disk
+    # Mount writable ephemeral in-memory storage for necessary scratch operations.
+    # What it does:
+    #   Allocates an isolated RAM-backed filesystem at /tmp capped at 64 megabytes.
+    # Why it is best-practice for security:
+    #   Enables applications requiring temporary scratch files (e.g. YARA rule compilation,
+    #   ClamAV scan buffers) to function seamlessly under an otherwise read-only container.
+    #   Data written to tmpfs disappears instantly when the container terminates and never touches disk.
+    # Attack Vector Prevented:
+    #   Disk exhaustion denial of service and forensic data recovery from physical host storage.
     tmpfs:
-      # Ephemeral temporary directory with restricted permissions and noexec flag
       - /tmp:size=64M,mode=1777
 
     # ============================================================================
-    # Resource Limits & Denial-of-Service (DoS) Governance
+    # Resource Limits & Denial-of-Service (DoS) Governance (cgroup v2)
     # ============================================================================
-    # Prevent rogue processes or memory leaks from exhausting host system resources
+    # Prevent rogue processes or memory leaks from exhausting host system resources.
+    # What it does:
+    #   Sets hard cgroup memory and CPU limits on the container process group.
+    # Why it is best-practice:
+    #   Protects co-located services on the host from resource starvation, memory leaks,
+    #   or CPU-bound ReDoS (Regular Expression Denial of Service) loops.
+    # Attack Vector Prevented:
+    #   Noisy-neighbor resource starvation, algorithmic complexity DoS, and Out-of-Memory (OOM) crashes.
     deploy:
       resources:
         limits:
@@ -67,7 +141,7 @@ services:
     # ============================================================================
     # Standard I/O and Interactive Terminal Configuration
     # ============================================================================
-    # Allocate pseudo-TTY for clean log formatting
+    # Allocate pseudo-TTY: false (deterministic non-interactive batch execution)
     tty: false
-    # Keep standard input open for interactive scanning pipelines if attached
+    # Keep standard input open: false (prevents dangling stdin file descriptors)
     stdin_open: false

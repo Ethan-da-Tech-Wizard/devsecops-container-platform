@@ -1,5 +1,8 @@
 # ==============================================================================
-# Pre-Commit Automated Security & Quality Hook Configuration
+# Program: Pre-Commit Automated Security & Quality Hook Configuration
+# Programmer: The Maintainer <maintainer@example.invalid>
+# Organization: TWU LLC
+# License: MIT License 2026
 # Architecture: Shift-Left Static Analysis Gating Prior to Git Commits
 # ==============================================================================
 

@@ -3,7 +3,11 @@
 Technical Specification, Threat Model, and Senior Engineering Interview Guide  
 Document Identifier: TWU-SEC-2026-WP01  
 Classification: Technical Architecture / Operations Guide  
+Author: The Maintainer <maintainer@example.invalid>  
+Organization: TWU LLC  
+License: MIT License 2026  
 Target Audience: Senior Infrastructure Engineers, DevSecOps Architects, Hiring Committees  
+Last Updated: November 2026  
 
 ---
 
