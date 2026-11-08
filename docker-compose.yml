@@ -1,0 +1,73 @@
+# ==============================================================================
+# Production Docker Compose Orchestration: Hardened DevSecOps Platform
+# Architecture: Read-Only Root Filesystem with Least-Privilege Sandboxing
+# ==============================================================================
+
+# Schema version definition for Docker Compose specification
+services:
+  # Primary containerized threat detection and security scanning service
+  scanner:
+    # Service build context definition
+    build:
+      # Build context root directory containing Dockerfile and source scripts
+      context: .
+      # Explicit Dockerfile path within build context
+      dockerfile: Dockerfile
+      # Target image tag for locally built container artifact
+    image: devsecops-platform:latest
+    # Container runtime display name for logging and inspection
+    container_name: twu-devsecops-scanner
+    # Restart policy: do not automatically restart on exit or failure during ad-hoc batch runs
+    restart: "no"
+
+    # ============================================================================
+    # Security Context & Least-Privilege Hardening Directives
+    # ============================================================================
+    # Enforce unprivileged execution as UID 10001 (appuser) and GID 10001 (appgroup)
+    # Prevents container processes from executing as root or mapping to host UID 0
+    user: "10001:10001"
+
+    # Immutable root filesystem enforcement
+    # Prevents runtime malware persistence by mounting container root ('/') as read-only
+    read_only: true
+
+    # Drop all Linux kernel capabilities to minimize kernel attack surface
+    # Strips CAP_CHOWN, CAP_NET_ADMIN, CAP_SYS_ADMIN, and other privileged capabilities
+    cap_drop:
+      - ALL
+
+    # Prevent privilege escalation flags from granting setuid/setgid elevation
+    security_opt:
+      - no-new-privileges:true
+
+    # ============================================================================
+    # Volatile Memory Mounts (tmpfs)
+    # ============================================================================
+    # Mount writable ephemeral in-memory storage for necessary scratch operations
+    # Data written to tmpfs disappears when the container terminates and never touches disk
+    tmpfs:
+      # Ephemeral temporary directory with restricted permissions and noexec flag
+      - /tmp:size=64M,mode=1777
+
+    # ============================================================================
+    # Resource Limits & Denial-of-Service (DoS) Governance
+    # ============================================================================
+    # Prevent rogue processes or memory leaks from exhausting host system resources
+    deploy:
+      resources:
+        limits:
+          # Cap memory allocation at 512 Megabytes
+          memory: 512M
+          # Limit CPU allocation to 1.0 core equivalent
+          cpus: "1.0"
+        reservations:
+          # Minimum reserved memory guaranteed for container execution
+          memory: 128M
+
+    # ============================================================================
+    # Standard I/O and Interactive Terminal Configuration
+    # ============================================================================
+    # Allocate pseudo-TTY for clean log formatting
+    tty: false
+    # Keep standard input open for interactive scanning pipelines if attached
+    stdin_open: false

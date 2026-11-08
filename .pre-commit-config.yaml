@@ -1,0 +1,49 @@
+# ==============================================================================
+# Pre-Commit Automated Security & Quality Hook Configuration
+# Architecture: Shift-Left Static Analysis Gating Prior to Git Commits
+# ==============================================================================
+
+# Minimum required pre-commit framework version
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
+
+repos:
+  # ============================================================================
+  # 1. Standard Hygiene & Secret Defense Hooks
+  # ============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # Block trailing whitespace accumulation
+      - id: trailing-whitespace
+      # Ensure newline at end of files
+      - id: end-of-file-fixer
+      # Validate YAML syntax across workflows and configuration
+      - id: check-yaml
+      # Validate JSON syntax across manifests and rules
+      - id: check-json
+      # Prevent accidental commits of private cryptographic keys
+      - id: detect-private-key
+      # Prevent commits directly to protected production branches
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+
+  # ============================================================================
+  # 2. Shell Script Security & POSIX Compliance (ShellCheck)
+  # ============================================================================
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      # Statically analyze all shell scripts to eliminate subshell and expansion bugs
+      - id: shellcheck
+        args: ["--severity=warning"]
+
+  # ============================================================================
+  # 3. Python Security Static Application Security Testing (Bandit SAST)
+  # ============================================================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      # Scan Python source code for common security vulnerabilities and weak hashes
+      - id: bandit
+        args: ["-ll", "-ii", "-x", "scripts/test_*"]
