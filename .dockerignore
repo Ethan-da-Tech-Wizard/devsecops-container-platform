@@ -1,0 +1,155 @@
+# ==============================================================================
+# TWU DevSecOps Docker Build Context Exclusion Configuration (.dockerignore)
+# Purpose: Minimizes build context size, prevents credential leaks, accelerates
+#          build speeds, and preserves Docker layer cache efficiency.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Version Control & Internal Repository Metadata
+# ------------------------------------------------------------------------------
+# Directive: .git
+# What it does:
+#   Excludes the entire Git version control database and object store directory.
+# Why it is best-practice for security & DevOps:
+#   - Credential Leakage Prevention: Git commit history retains historical commits,
+#     deleted tokens, branch histories, and contributor metadata. Baking .git into a
+#     container image risks exposing sensitive repository history if the image is shared.
+#   - Build Cache Invalidation: Any new git commit or checkout updates files in .git/
+#     (such as HEAD and index). If included in the context, every commit invalidates Docker's
+#     layer cache, causing slow, redundant rebuilds of downstream layers.
+#   - Context Size Minimization: The .git directory often consumes hundreds of megabytes.
+.git
+
+# Directive: .gitignore
+# What it does:
+#   Excludes the Git exclusion specification file from the build context.
+# Why it is best-practice:
+#   - Runtime Irrelevance: Git ignore rules are developer-tooling metadata unnecessary
+#     for running containerized workloads.
+.gitignore
+
+# Directive: .gitattributes
+# What it does:
+#   Excludes Git repository path-specific attribute definitions (e.g., LFS rules, line endings).
+# Why it is best-practice:
+#   - Runtime Irrelevance: Developer configuration not needed in production container layers.
+.gitattributes
+
+# ------------------------------------------------------------------------------
+# 2. Secrets, Private Credentials & Local Environment Overrides
+# ------------------------------------------------------------------------------
+# Directive: private/
+# What it does:
+#   Recursively excludes the proprietary 'private/' workspace folder.
+# Why it is best-practice for security (Crucial Security Rule):
+#   - Confidentiality & Least Privilege: Contains private keys, sensitive business data,
+#     and confidential configurations that must never leave the host system or enter images.
+private/
+
+# Directive: .env*
+# What it does:
+#   Excludes all local environment files (.env, .env.local, .env.development, .env.production).
+# Why it is best-practice for security (Crucial Interview Discussion Point):
+#   - Prevents Hardcoded Secrets (CWE-798): Docker container images are immutable and
+#     can be inspected by anyone with read access to the registry via 'docker history'.
+#   - Even if an .env file is deleted in a subsequent RUN layer, Docker's union filesystem
+#     still preserves it in lower layers.
+#   - Industry Standard 12-Factor App methodology: Secrets and environment configuration
+#     must be injected dynamically at runtime via container orchestrators (Kubernetes Secrets,
+#     AWS ECS task definitions, HashiCorp Vault), never baked into images.
+.env*
+
+# Directives: *.key, *.pem
+# What it does:
+#   Excludes private cryptographic keys and Privacy Enhanced Mail (PEM) certificates.
+# Why it is best-practice for security:
+#   - Prevents catastrophic exposure of TLS/SSL private keys, SSH host/identity keys,
+#     and asymmetric signing keys.
+*.key
+*.pem
+
+# Directive: *.sync-conflict*
+# What it does:
+#   Excludes distributed file synchronization conflict files (e.g. Syncthing conflict copies).
+# Why it is best-practice:
+#   - Integrity & Determinism: Prevents out-of-sync, duplicate, or half-written file variants
+#     from being copied into the container filesystem.
+*.sync-conflict*
+
+# ------------------------------------------------------------------------------
+# 3. Local State, Backups, Archives & Ephemeral Caches
+# ------------------------------------------------------------------------------
+# Directive: data/
+# What it does:
+#   Excludes the local host data directory containing local operational state and test fixtures.
+# Why it is best-practice:
+#   - Prevents local host state from polluting the production container filesystem.
+#   - Containers should be stateless; stateful data must be mounted via volumes.
+data/
+
+# Directives: archive/, backups/, .stversions/
+# What it does:
+#   Excludes historical version archives, backup snapshots, and Syncthing version history.
+# Why it is best-practice:
+#   - Massively reduces build context size and prevents stale or deprecated code from entering images.
+archive/
+backups/
+.stversions/
+
+# Directives: __pycache__/, *.py[cod], *$py.class
+# What it does:
+#   Excludes Python bytecode caches and compiled binaries (.pyc, .pyo, .pyd, Java-Python class files).
+# Why it is best-practice for security & stability:
+#   - Architecture & Version Consistency: Host bytecode may have been compiled using a different
+#     Python minor version, different compiler flags, or host-specific paths.
+#   - Non-Root Permissions: Host-generated __pycache__ files are often owned by the host UID,
+#     causing permission-denied crashes when non-root container users (UID 10001) attempt execution.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Directive: *.log
+# What it does:
+#   Excludes runtime log files generated during local development or testing.
+# Why it is best-practice:
+#   - Information Disclosure Mitigation: Host log files can contain IP addresses, local paths,
+#     debug stack traces, or sensitive diagnostic outputs that should never be shipped to production.
+*.log
+
+# Directives: .pytest_cache/, .coverage, htmlcov/
+# What it does:
+#   Excludes test runner caches, coverage database files, and HTML coverage reports.
+# Why it is best-practice:
+#   - Ephemeral testing metadata that bloats the build context and provides zero runtime utility.
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Directives: node_modules/, .npm/
+# What it does:
+#   Excludes Node.js package directories and npm caches.
+# Why it is best-practice:
+#   - Eliminates thousands of small host-platform-specific files that drastically slow down
+#     the initial Docker build context transfer.
+node_modules/
+.npm/
+
+# ------------------------------------------------------------------------------
+# 4. Large Machine Learning Model Weights & Binary Blobs
+# ------------------------------------------------------------------------------
+# Directives: *.gguf, *.safetensors, *.bin, *.tar.zst
+# What it does:
+#   Excludes large machine learning model weights (llama.cpp GGUF files, Hugging Face
+#   SafeTensors, PyTorch/TensorFlow bin weights) and compressed archives.
+# Why it is best-practice for container architecture (Crucial Interview Discussion Point):
+#   - Extreme Context & Image Bloat: Model weights range from 4 GB to over 70 GB.
+#     Including them in the build context causes 'docker build' socket transfers to stall or timeout,
+#     creates multi-gigabyte container images, and overwhelms container registries.
+#   - Separation of Code and Data: Container images should represent immutable application code.
+#     Large ML model weights should be mounted at runtime via persistent network volumes (EFS/NFS),
+#     Kubernetes PersistentVolumeClaims (PVCs), or dynamically pulled on container startup from
+#     an object store (AWS S3, Google Cloud Storage) with local disk caching.
+*.gguf
+*.safetensors
+*.bin
+*.tar.zst

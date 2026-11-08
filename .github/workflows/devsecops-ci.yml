@@ -1,0 +1,297 @@
+# ==============================================================================
+# TWU DevSecOps Automated CI/CD & Security Assurance Pipeline
+# ==============================================================================
+# Pipeline Architecture Overview:
+#   This GitHub Actions workflow implements an enterprise "Shift-Left" DevSecOps
+#   architecture. Rather than auditing security at release or in production, this
+#   pipeline validates security, static code quality, threat signatures, container
+#   vulnerabilities, and software supply chain metadata on every push and pull request.
+#
+# Core Security Gates:
+#   1. Static Analysis (SAST) & Linting: ShellCheck, Python compileall, Bandit SAST.
+#   2. Threat Pattern & Rule Vetting: YARA signature parsing & threat unit tests.
+#   3. Container Hardening & Supply Chain: Docker Buildx, Trivy CVE scan, SPDX SBOM generation.
+#   4. Multi-Version Compatibility: Python 3.10-3.13 regression & certification test matrix.
+# ==============================================================================
+
+# Workflow Identifier: Display name presented in GitHub Actions dashboard and PR status checks.
+name: DevSecOps CI/CD & Automated Container Pipeline
+
+# ------------------------------------------------------------------------------
+# Workflow Triggers: Event definitions that initiate the CI/CD pipeline.
+# ------------------------------------------------------------------------------
+on:
+  # Trigger on pushes to primary and staging integration branches.
+  push:
+    branches: [ main, develop ]
+
+  # Trigger on pull requests targeting the production branch ('main').
+  # Acts as an automated pull request security gate preventing unvetted code from merging.
+  pull_request:
+    branches: [ main ]
+
+  # Allows authorized engineers and security administrators to manually trigger
+  # the workflow on-demand via the GitHub Web UI or GitHub REST API.
+  workflow_dispatch:
+
+# ------------------------------------------------------------------------------
+# Least-Privilege Permissions Configuration
+# ------------------------------------------------------------------------------
+# Why this is best-practice for security (Crucial Interview Discussion Point):
+#   By default, GitHub Actions workflows can inherit broad read/write permissions
+#   associated with the default GITHUB_TOKEN. This violates the Principle of Least Privilege (PoLP).
+#   If a third-party action or compromised script executes in a step, excessive write permissions
+#   can lead to repository tampering or unauthorized branch pushes.
+#   Explicitly setting top-level permissions restricts the token to:
+#     - contents: read -> Read-only access to repository source code.
+#     - security-events: write -> Grants permission to upload SARIF vulnerability reports
+#       to GitHub Advanced Security / CodeQL dashboard.
+permissions:
+  contents: read
+  security-events: write
+
+# ------------------------------------------------------------------------------
+# Pipeline Job Definitions
+# ------------------------------------------------------------------------------
+jobs:
+  # ============================================================================
+  # Stage 1: Static Application Security Testing (SAST) & Code Quality Linting
+  # ============================================================================
+  static-analysis:
+    name: Lint & SAST Analysis
+    # Runs on a clean, isolated, GitHub-hosted Ubuntu runner VM to prevent environment contamination.
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout the repository source code.
+      # Pinning to major version v4 ensures non-breaking security updates and fixes.
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up official Python runtime environment.
+      # Configures standard Python 3.12 interpreter and registers python/pip binaries in $PATH.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Step 3: Install static analysis and security scanning tools.
+      # - shellcheck: Static analysis linter for POSIX and Bash shell scripts.
+      # - bandit: AST-based Static Application Security Testing (SAST) tool for Python.
+      - name: Install Linting & SAST Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          pip install --upgrade pip bandit
+
+      # Step 4: ShellCheck Static Analysis on Shell Scripts.
+      # What it does:
+      #   Finds all '.sh' shell scripts in 'scripts/' and runs ShellCheck across them.
+      # Why it is best-practice for security:
+      #   - Detects insecure shell programming practices, including unquoted variable expansions
+      #     (which lead to command injection or word splitting), globbing bugs, unsafe temp file
+      #     usage, and non-portable subshell constructs.
+      #   - '-exec ... {} +' batches file arguments into a single execution for optimal performance.
+      - name: ShellCheck Linting
+        run: |
+          find scripts/ -type f -name "*.sh" -exec shellcheck {} +
+
+      # Step 5: Python Syntax & Bytecode Compilation Verification.
+      # What it does:
+      #   Compiles all Python scripts in 'scripts/' into bytecode using 'compileall'.
+      # Why it is best-practice:
+      #   - Fails fast if any Python script contains syntax errors, invalid indentation,
+      #     or broken character encodings across all modules without having to execute them.
+      #   - '-q' (quiet) flag suppresses verbose output, highlighting only compilation errors.
+      - name: Python Syntax & Bytecode Compilation
+        run: |
+          python3 -m compileall -q scripts/
+
+      # Step 6: Bandit Static Application Security Testing (SAST).
+      # What it does:
+      #   Parses Python code into an Abstract Syntax Tree (AST) and scans for common
+      #   security vulnerabilities and insecure coding patterns.
+      # Flag Explanations & Interview Talking Points:
+      #   - '-r scripts/': Recursively scans the scripts directory.
+      #   - '-ll': Filters findings to report only Medium and High severity issues,
+      #     eliminating low-severity noise to keep developer signal high.
+      #   - '-ii': Filters findings to report only Medium and High confidence issues,
+      #     drastically reducing false positives.
+      #   - '-x "scripts/test_*"': Excludes test suites from scanning, as tests often contain
+      #     mock credentials, assert idioms, or simulated insecure inputs that trigger false alerts.
+      #   - '-f custom --msg-template ...': Formats output for clear, standardized CI logging.
+      #   - '|| true': Allows the step to surface findings in CI logs without failing the entire build,
+      #     permitting non-blocking review while transitioning toward strict gating.
+      - name: Bandit Security Static Analysis (SAST)
+        run: |
+          bandit -r scripts/ -ll -ii -x "scripts/test_*" -f custom --msg-template "{abspath}:{line}: {test_id}[bandit]: {severity}: {msg}" || true
+
+  # ============================================================================
+  # Stage 2: Threat Detection Rule Vetting & Security Regression Test Suites
+  # ============================================================================
+  security-vetting:
+    name: YARA Rule Integrity & Threat Scan
+    # Runs on clean GitHub-hosted Ubuntu runner.
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout repository source code.
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Install system YARA package.
+      # YARA is the industry-standard pattern-matching engine for malware researchers.
+      - name: Install YARA
+        run: |
+          sudo apt-get update && sudo apt-get install -y yara
+
+      # Step 3: Run Core Security Unit & Regression Test Suites.
+      # What it does:
+      #   Executes Python unittests covering threat rule vetting, syntax validation,
+      #   and static security checks.
+      # Why it is best-practice:
+      #   - Assures that threat scanners behave deterministically and that security logging
+      #     and alerting pipelines operate without regressions.
+      - name: Run Core Security Test Suites
+        run: |
+          python3 -m unittest -v scripts/test_twu_yara_vet.py
+
+  # ============================================================================
+  # Stage 3: Hardened Container Build, SBOM Generation & Vulnerability Scanning
+  # ============================================================================
+  docker-build-and-scan:
+    name: Docker Build, SBOM & Trivy Scan
+    # Job Dependencies (Gating): This job will ONLY run if both 'static-analysis'
+    # and 'security-vetting' complete successfully. This saves CI runner minutes
+    # and enforces strict stage gating before attempting container builds.
+    needs: [static-analysis, security-vetting]
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout repository source code.
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Docker Buildx engine.
+      # What it does:
+      #   Initializes Docker Buildx using the BuildKit backend.
+      # Why it is best-practice:
+      #   - Enables advanced BuildKit capabilities: parallel multi-stage building,
+      #     enhanced build layer caching, and built-in SBOM and provenance attestations.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 3: Build the container image locally.
+      # What it does:
+      #   Builds the container using our hardened, multi-stage Dockerfile.
+      # Security & Pipeline Configuration:
+      #   - 'context: .': Root workspace context (filtered by our hardened .dockerignore).
+      #   - 'file: ./Dockerfile': Path to our multi-stage Dockerfile.
+      #   - 'push: false': Ensures test images are never pushed to remote container registries
+      #     during PR validation, preventing untrusted code from polluting production registries.
+      #   - 'tags: devsecops-container-platform:latest': Tags the local image for downstream scanning.
+      #   - 'load: true': Loads the built image directly into the local Docker daemon
+      #     so that Trivy and local docker commands can inspect and run it.
+      - name: Build Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: devsecops-container-platform:latest
+          load: true
+
+      # Step 4: Generate Software Bill of Materials (SBOM).
+      # What it does:
+      #   Analyzes the built container image and generates an inventory of all installed
+      #   packages, OS libraries, licenses, and components in SPDX standard JSON format.
+      # Why it is best-practice for security (Crucial Interview Discussion Point):
+      #   - Supply Chain Transparency: Fulfills US Presidential Executive Order 14028
+      #     (Improving the Nation's Cybersecurity) requirements for software supply chain transparency.
+      #   - SPDX Standard (ISO/IEC 5962:2021): Standardized open-source format consumable by
+      #     enterprise vulnerability management and license compliance systems.
+      - name: Generate Software Bill of Materials (SBOM)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devsecops-container-platform:latest
+          format: spdx-json
+          output: sbom.spdx.json
+
+      # Step 5: Container Vulnerability Scanning with Trivy.
+      # What it does:
+      #   Scans the container OS packages (Debian) and application dependencies against
+      #   comprehensive CVE databases (NVD, Debian Security Tracker).
+      # Flag Explanations & Interview Talking Points:
+      #   - 'format: table': Prints a clean, readable tabular summary in the CI job log.
+      #   - 'severity: CRITICAL,HIGH': Prioritizes actionable vulnerabilities with high exploit
+      #     potential (CVSS 7.0+), avoiding alert fatigue from low-impact cosmetic issues.
+      #   - 'ignore-unfixed: true': Filters out CVEs where no vendor patch has been released yet.
+      #     Prevents blocking CI pipelines on upstream zero-days where developers have no remediation action.
+      #   - 'exit-code: 0': Informational reporting mode for PR evaluation. In strict blocking
+      #     deployments, setting this to '1' fails the build if unresolved high/critical CVEs exist.
+      - name: DevSecOps Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devsecops-container-platform:latest
+          format: table
+          exit-code: 0
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      # Step 6: Test Container Runtime Health (Smoke Test).
+      # What it does:
+      #   Executes 'docker run --rm devsecops-container-platform:latest /app/scripts/twu_yara_vet.py --help'.
+      # Why it is best-practice:
+      #   - Validates that the container starts up cleanly, non-root user permissions (UID 10001)
+      #     function without permission errors, required libraries load, and the default
+      #     security CLI audit exits with code 0.
+      #   - '--rm': Immediately cleans up the container filesystem upon exit to prevent disk exhaustion.
+      - name: Test Container Runtime Health
+        run: |
+          docker run --rm devsecops-container-platform:latest /app/scripts/twu_yara_vet.py --help
+
+      # Step 7: Upload SBOM Artifact to GitHub Actions.
+      # What it does:
+      #   Persists the generated 'sbom.spdx.json' as a downloadable build artifact.
+      # Why it is best-practice:
+      #   - Audit Trail & Governance: Ensures every build has an immutable, downloadable record
+      #     of its software inventory retained for 14 days for compliance audits.
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-sbom
+          path: sbom.spdx.json
+          retention-days: 14
+
+  # ============================================================================
+  # Stage 4: Multi-Version Python Compatibility Test Matrix
+  # ============================================================================
+  test-matrix:
+    name: Python Test Matrix
+    # Dependencies: Runs in parallel with Stage 2 and Stage 3 once static analysis passes.
+    needs: [static-analysis]
+    runs-on: ubuntu-latest
+    # Strategy Matrix: Spawns 4 concurrent runner instances across supported Python versions.
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      # Step 1: Checkout repository source code.
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up specific Python version from matrix parameter.
+      # Dynamically installs and configures Python 3.10, 3.11, 3.12, or 3.13 per job instance.
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Step 3: Run Core Platform Test Suites across Python versions.
+      # What it does:
+      #   Executes platform test suites to verify cross-version compatibility.
+      # Why it is best-practice for security & engineering (Interview Talking Point):
+      #   - Backwards & Forwards Compatibility: Verifies that core security tools,
+      #     parsing checks, and threat scanners work reliably on older LTS platforms (Python 3.10)
+      #     as well as the latest cutting-edge runtimes (Python 3.13).
+      #   - Early Deprecation Detection: Identifies deprecated standard library calls or syntax
+      #     changes before they cause runtime failures during operating system upgrades.
+      - name: Run Core Test Suites
+        run: |
+          python3 -m unittest -v scripts/test_twu_yara_vet.py
