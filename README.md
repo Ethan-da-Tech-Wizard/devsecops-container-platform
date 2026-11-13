@@ -1,99 +1,35 @@
-# Production DevSecOps CI/CD & Hardened Container Platform
+# DevSecOps Container and CI Experiments
 
-An enterprise-grade, shift-left Continuous Integration and Continuous Delivery (CI/CD) and containerization platform implementing automated security gates, least-privilege non-root execution, vulnerability scanning, and software supply chain governance.
+This repository contains a multi-stage Dockerfile, a GitHub Actions workflow, and Python tooling for vetting YARA rules. It is an example project for exploring container builds, security checks, and software supply-chain workflows.
 
----
+## What's in the repository
 
-## 1. Architectural Highlights
+- [Dockerfile](Dockerfile): a Python-based multi-stage image configured to run as a non-root user.
+- [GitHub Actions workflow](.github/workflows/devsecops-ci.yml): runs static analysis and unit-test jobs, builds a container image, and configures a Trivy scan and a Python version matrix.
+- [YARA vetting script](scripts/twu_yara_vet.py): includes commands for building and verifying a local rule manifest.
+- [YARA tests](scripts/test_twu_yara_vet.py): unit tests for the vetting script.
 
-- **Multi-Stage Hardened Container**: Built from `python:3.12-slim-bookworm` with strict separation between ephemeral compiler stages and a minimal runtime footprint.
-- **Least-Privilege Non-Root Execution**: Runs strictly as an unprivileged service account (`appuser:appgroup`, UID/GID 10001) with interactive shells disabled (`/sbin/nologin`).
-- **Static Application Security Testing (SAST)**: Automated linting and security analysis via ShellCheck and Bandit AST scanner.
-- **Threat Signature Verification**: Cryptographic compile-time verification across YARA detection rules before deployment.
-- **Container Vulnerability Gating**: Continuous container image scanning using Aqua Security Trivy, enforcing zero unmitigated `CRITICAL` or `HIGH` CVEs.
-- **Software Bill of Materials (SBOM)**: Automated SPDX-JSON SBOM generation adhering to Executive Order 14028 and ISO/IEC 5962:2021 standards.
-- **Multi-Runtime Compatibility**: Matrix validation across Python 3.10, 3.11, 3.12, and 3.13.
+The workflow configures Trivy to report HIGH and CRITICAL findings with `exit-code: 0`; those findings do **not** fail that scan step. Its Bandit command also ends with `|| true`, so Bandit findings do not fail that step. A workflow definition or passing run does not establish that an image is vulnerability-free, production-ready, or compliant with a particular standard.
 
----
+## Local checks
 
-## 2. Repository Layout
+From the repository root, with Python and any required tools installed:
 
-```
-.
-├── .dockerignore                           # Minimal build context & secret exclusion
-├── Dockerfile                              # Multi-stage hardened build (UID 10001)
-├── .github/
-│   └── workflows/
-│       └── devsecops-ci.yml                # 4-stage GitHub Actions CI/CD pipeline
-├── docs/
-│   ├── DEVSECOPS_WHITEPAPER.md             # Complete architectural decision records & threat model
-│   └── PLATFORM_SECURITY_WHITEPAPER.md     # 3-node distributed mesh & kernel cgroup isolation
-└── scripts/
-    ├── twu_yara_vet.py                     # Offline YARA rule verification & build engine
-    └── test_twu_yara_vet.py                # Security & syntax validation test suite
-```
-
----
-
-## 3. Pipeline Stages
-
-```
-   [ Git Push / Pull Request ]
-               │
-    ┌──────────┴──────────┐
-    ▼                     ▼
-[ Stage 1: SAST ]     [ Stage 2: YARA Vetting ]
-• ShellCheck (Bash)   • Threat pattern syntax check
-• python3 compileall  • YARA engine compilation
-• Bandit (Python)     • Core security test suite
-    │                     │
-    └──────────┬──────────┘
-               ▼
-  [ Stage 3: Docker Build & DevSecOps ]
-  • Multi-stage build with BuildKit
-  • Non-root UID/GID 10001
-  • Aqua Security Trivy scan (HIGH,CRITICAL)
-  • SPDX-JSON SBOM artifact generation
-  • In-container runtime smoke test
-               │
-               ▼
-  [ Stage 4: Multi-Version Test Matrix ]
-  • Parallel matrix: Python 3.10, 3.11, 3.12, 3.13
-  • Platform regression certification suites
-```
-
----
-
-## 4. Local Verification & Reproducibility
-
-Execute the same verification checks locally before pushing:
-
-```bash
-# 1. Shell script linting
-find scripts/ -type f -name "*.sh" -exec shellcheck {} +
-
-# 2. Python bytecode compilation
+```sh
 python3 -m compileall -q scripts/
-
-# 3. YARA rule integrity & platform security test suites
 python3 -m unittest discover -s scripts/ -p "test_*.py" -v
+python3 scripts/twu_yara_vet.py --help
 ```
 
----
+For shell scripts, the existing workflow uses ShellCheck:
 
-## 5. Technical Documentation & Whitepapers
+```sh
+find scripts/ -type f -name "*.sh" -exec shellcheck {} +
+```
 
-- **[DevSecOps Technical Whitepaper](docs/DEVSECOPS_WHITEPAPER.md)**: Architectural Decision Records (ADRs), Supply Chain Threat Model, and Senior DevOps / DevSecOps STAR-method interview scripts.
-- **[Platform Security Whitepaper](docs/PLATFORM_SECURITY_WHITEPAPER.md)**: Distributed 3-node mesh architecture, WireGuard remote syslog receiver (`LOGG-2154`), and Linux kernel cgroup v2 resource isolation.
+Review the [workflow](.github/workflows/devsecops-ci.yml), [Dockerfile](Dockerfile), and dependencies before building or running them. YARA commands that compile or scan rules require the relevant YARA utilities. Historical whitepapers and source comments may contain claims that have not been independently verified; check them against the actual implementation and current test results.
 
----
+## License
 
-## 6. Author & License
+[MIT License](LICENSE).
 
-**The Maintainer**  
-Software Engineer | DevOps & DevSecOps | Applied AI & Linux Systems  
-GitHub: [github.com/Ethan-da-Tech-Wizard](https://github.com/Ethan-da-Tech-Wizard)  
-Email: maintainer@example.invalid  
-Organization: TWU LLC  
-
-Licensed under the **MIT License 2026**. See [LICENSE](LICENSE) for details.
