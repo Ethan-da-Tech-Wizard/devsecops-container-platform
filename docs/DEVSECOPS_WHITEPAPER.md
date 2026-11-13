@@ -1,12 +1,14 @@
 # DevSecOps Platform Architecture & Technical Whitepaper
 
-Technical Specification, Threat Model, and Senior Engineering Interview Guide  
+> **Historical draft — claims require review.** This document contains proposed or historical design and interview examples, not verified professional titles, a current deployment record, or a security or compliance certification. In the repository's current workflow, Trivy reports HIGH/CRITICAL findings with `exit-code: 0` and Bandit ends in `|| true`; those findings do not fail their respective steps. Review claims against the actual code and current test results.
+
+Draft architecture, threat-model and interview examples  
 Document Identifier: TWU-SEC-2026-WP01  
 Classification: Technical Architecture / Operations Guide  
 Author: The Maintainer <maintainer@example.invalid>  
 Organization: TWU LLC  
 License: MIT License 2026  
-Target Audience: Senior Infrastructure Engineers, DevSecOps Architects, Hiring Committees  
+Target Audience: Developers and readers evaluating the project  
 Last Updated: November 2026  
 
 ---
@@ -19,7 +21,7 @@ This whitepaper provides an exhaustive technical analysis of the DevSecOps archi
 1. Architectural Decision Records (ADRs) explaining the concrete rationale for every tool and design choice.
 2. An end-to-end execution flow specification detailing every phase of the CI/CD pipeline graph.
 3. A formal Supply Chain Security Threat Model covering dependency provenance, container breakout mitigation, credential exfiltration resistance, and pipeline immutability.
-4. An authoritative interview guide using the Situation-Task-Action-Result (STAR) methodology, equipping the maintainer to defend every technical design decision with depth in senior DevOps, DevSecOps, and Platform Engineering interviews.
+4. Example interview narratives using the Situation-Task-Action-Result (STAR) format; these must be checked against actual individual contributions and evidence.
 
 ---
 
@@ -423,9 +425,9 @@ The TWU LLC DevSecOps architecture adheres to a defense-in-depth threat model de
 
 ---
 
-## Section 4: Verbatim Senior DevOps / DevSecOps Interview Guide (STAR Method)
+## Section 4: Example DevOps / DevSecOps Interview Narratives (STAR Method)
 
-This section provides complete, technically rigorous responses structured around the STAR methodology (Situation, Task, Action, Result) for senior-level engineering interviews.
+This section contains illustrative STAR narratives. They are not independently verified descriptions of an individual's role or production results.
 
 ---
 
@@ -444,11 +446,11 @@ My objective was to architect a production-grade, zero-cloud-spend CI/CD pipelin
 I designed a four-stage pipeline graph in GitHub Actions:
 1. Static Application Security Testing: I implemented parallel static analysis using ShellCheck for all shell automation scripts to prevent subshell and quoting bugs, and Bandit to perform AST-based security linting on Python source code.
 2. Threat Rule Vetting: I created an automated verification step for our 5,300+ YARA rule database using our custom `twu_yara_vet.py` engine, compiling rules via `yarac` and verifying cryptographic SHA256 manifests.
-3. Multi-Stage Containerization & CVE Gating: I authored a hardened multi-stage Dockerfile that drops build tools and executes under an unprivileged user (UID 10001). I integrated Aqua Security Trivy into the build to scan container layers, gate builds on critical and high CVEs (`ignore-unfixed: true`), generate an SPDX-JSON SBOM, and run an in-container self-test.
+3. Multi-Stage Containerization & Scanning: The repository includes a multi-stage Dockerfile configured for an unprivileged user, a Trivy scan configured to report critical and high findings without failing that scan step, and workflow steps for SBOM generation and an in-container check.
 4. Matrix Certification: I configured an automated test matrix validating backward and forward compatibility across Python 3.10 through 3.13.
 
 #### Result
-The automated pipeline achieved 100% test and verification pass rates across all Python runtime targets. It established an immutable audit trail for every build, automatically blocked unpatched critical CVEs prior to deployment, generated audit-ready SPDX SBOMs for supply-chain compliance, and cut local validation turnaround time by catching defects during pull request review.
+The workflow defines a Python version matrix and steps for scans and an SPDX-JSON SBOM. Current results, deployment status, audit properties, and time savings require separate evidence. The configured Trivy scan does not block a build on findings.
 
 ---
 
@@ -587,4 +589,5 @@ By combining:
 - Automated vulnerability scanning and SPDX-JSON SBOM generation.
 - Multi-runtime matrix validation across four Python versions.
 
-The platform provides a blueprint for secure, compliant, and cost-effective software engineering. the maintainer can reference this whitepaper and its associated STAR narratives to authoritatively demonstrate senior-level DevOps, DevSecOps, and Platform Engineering competencies in any technical interview or architecture review.
+The repository is an example of CI and container tooling. Its use, security properties, and any interview claims should be assessed against specific implementation and test evidence.
+
