@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-"""
-==============================================================================
-Program: Test Suite for Cryptographic YARA Rule Vetting (test_twu_yara_vet.py)
-Programmer: The Maintainer <maintainer@example.invalid>
-Organization: TWU LLC
-License: MIT License 2026
-Purpose: Validate static security checks, disallowed module rejection, global rule
-         blocking, include statement denial, and cryptographic SHA-256 tamper
-         detection across threat detection rules.
+# ==============================================================================
+# Program: test_twu_yara_vet.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit test suite for twu_yara_vet.py verifying fail-closed rule validation,
+#          disallowed import module detection, global rule blocking, and cryptographic
+#          SHA-256 tamper-evident integrity tracking.
+# ==============================================================================
 
-Threat Model & Security Regressions Tested:
-  - Disallowed Native C Modules: Ensures imports like 'cuckoo' are rejected.
-  - Cross-Rule Condition Poisoning: Asserts that 'global rule' definitions fail static checks.
-  - Uncontrolled Inclusion: Asserts that 'include "..."' statements are rejected.
-  - Manifest Tamper Resistance: Asserts that any byte modification in a vetted rule file
-    is immediately detected as a SHA-256 mismatch.
-==============================================================================
-"""
-
+from __future__ import annotations
 import json
 import os
 import shutil

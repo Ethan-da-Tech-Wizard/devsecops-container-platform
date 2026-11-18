@@ -1,40 +1,14 @@
 #!/usr/bin/env python3
-"""
-==============================================================================
-Program: Deterministic Technical Document & Whitepaper Generator (twu_docgen)
-Programmer: The Maintainer <maintainer@example.invalid>
-Organization: TWU LLC
-License: MIT License 2026
-Purpose: Statically extract architecture metadata, container hardening directives,
-         CI/CD pipeline stages, and threat patterns from repositories, deterministically
-         generating audit-ready technical whitepapers, Architectural Decision Records
-         (ADRs), threat models, and STAR-method interview guides with zero network calls
-         and zero AI model dependencies.
+# ==============================================================================
+# Program: twu_docgen.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Deterministic technical whitepaper and architectural documentation
+#          generator. Statically parses repository ASTs, Dockerfiles, and CI workflows
+#          to synthesize audit-ready technical whitepapers and ADR catalogues.
+# ==============================================================================
 
-Threat Model & Attack Vectors Mitigated:
-  1. Arbitrary Code Execution via AST Parsing (CWE-94 / CWE-95):
-     - Uses Python's native `ast.parse()` to safely inspect module structure and docstrings
-       without executing untrusted code or importing untrusted modules via `__import__` or `eval()`.
-  2. Regular Expression Denial of Service (ReDoS) (CWE-1333):
-     - All regular expressions are simple, linear-time expressions without nested quantifiers
-       or catastrophic backtracking risks.
-  3. Path Traversal & Symlink Attacks (CWE-22 / CWE-59):
-     - Enforces `Path.resolve()` on project roots, validating that targets exist and reside
-       within intended directory boundaries.
-  4. Supply Chain / Data Exfiltration Resistance:
-     - Pure standard library Python 3 with zero third-party dependencies (no requests, no urllib,
-       no external AI APIs). All generation is 100% offline, deterministic, and reproducible.
-
-Senior Interview Talking Points:
-  - Static AST Inspection vs. Dynamic Imports: Why safe AST analysis eliminates arbitrary code
-    execution risks when scanning untrusted developer repositories.
-  - Deterministic Documentation as Code: How automated whitepaper generation guarantees that
-    architectural documentation remains synchronized with actual Dockerfile and CI configurations.
-  - Zero-Cloud / Zero-Cost DevSecOps: Demonstrating enterprise-grade documentation and compliance
-    capabilities without incurring recurring SaaS or LLM API expenses.
-==============================================================================
-"""
-
+from __future__ import annotations
 from __future__ import annotations
 
 import argparse
@@ -51,6 +25,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # 1. Static Project Analyzer (Zero Network, Stdlib-Only)
 # ==============================================================================
 
+# Step 1: Static repository analyzer discovering Dockerfiles, workflows, and AST metadata
 class ProjectAnalyzer:
     """Statically analyzes repository components to extract architectural metadata.
     
