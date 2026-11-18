@@ -1,52 +1,14 @@
 #!/usr/bin/env python3
-"""
-==============================================================================
-Program: Cryptographic YARA Rule Vetting & Verification Engine (twu_yara_vet)
-Programmer: The Maintainer <maintainer@example.invalid>
-Organization: TWU LLC
-License: MIT License 2026
-Purpose: Build, audit, and cryptographically verify the vetted YARA detection rule
-         manifest in data/yara_rules/ (Python standard library only, 100% offline).
+# ==============================================================================
+# Program: twu_yara_vet.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Cryptographic YARA rule vetting and verification engine. Audits rule
+#          definitions offline, enforces fail-closed static gating, and compiles
+#          tamper-evident SHA-256 manifests with atomic file replacement.
+# ==============================================================================
 
-Commands:
-  build  --src ID=DIR@COMMIT|LICENSE|URL ...   Vet rule files from pinned, already-downloaded checkouts.
-  fptest --corpus-file LIST                    Scan known-clean files, reporting false-positive rule triggers.
-  verify                                       Check MANIFEST sha256 checksums and compile index.yar.
-
-Security & Architectural Design:
-  1. Offline Operation: Rules are NEVER downloaded dynamically by this script. Rules must be
-     downloaded, inspected, and unpacked at a pinned git commit hash before running `build`.
-  2. Strict Static Gating: A rule file is REJECTED when it:
-     - Imports an unvetted or disabled module outside ALLOWED_MODULES (e.g. cuckoo).
-     - Declares an `include "..."` directive (every rule file must be self-contained).
-     - Declares a `global` rule modifier (prevents cross-rule condition poisoning).
-     - Declares an external variable (the scanning runtime provides zero external variables).
-     - Repeats an existing rule identifier already claimed by a previously vetted rule.
-  3. Non-Executable Analysis: Scanned target files are opened read-only; nothing here executes
-     or evaluates scanned payloads.
-
-Threat Model & Attack Vectors Mitigated:
-  - Supply Chain Rule Tampering (CWE-353): Cryptographic SHA-256 verification guarantees that
-    no rule file has been modified, corrupted, or backdoored after the manifest build date.
-  - Insecure C Extension Exploits (CWE-829): Restricts imports to audited native modules
-    (pe, elf, math, hash, dotnet, macho), blocking unvetted modules that could execute arbitrary code.
-  - Scope Pollution & Cross-Contamination: Disallowing `global` rules ensures one rule's logic
-    cannot force matches or suppress detections across the rest of the detection corpus.
-  - Filesystem Race Conditions (CWE-362): Atomic write operations (`write_atomic`) write to a
-    temporary file on the same filesystem and replace the target atomically via `os.replace()`.
-  - Regular Expression Denial of Service (ReDoS): Mandatory compilation via `yarac` catches
-    catastrophic regex syntax before rules are deployed into scanning daemons.
-
-Senior Interview Talking Points:
-  - Cryptographic Manifest Provenance: How pinned git commits and SHA-256 integrity trees
-    satisfy zero-trust supply chain governance for endpoint threat intelligence feeds.
-  - Fail-Closed Static Analysis: Why blocking dynamic includes and external variables enforces
-    hermetic rule evaluation across distributed production nodes.
-  - Atomic File Persistence in Linux: Why `tempfile.mkstemp` paired with `os.replace` prevents
-    partially written or corrupted index files during unexpected power loss or process kill.
-==============================================================================
-"""
-
+from __future__ import annotations
 import argparse
 import hashlib
 import json
@@ -73,6 +35,7 @@ RULE_RE = re.compile(r'^\s*((?:(?:private|global)\s+)*)rule\s+([A-Za-z_]\w*)', r
 INCLUDE_RE = re.compile(r'^\s*include\s+"', re.M)
 
 
+# Step 1: Safely resolve executable binary paths in PATH or ~/.local/bin
 def which_local(cmd: str) -> str | None:
     """Locate an executable binary in the system PATH or the local user bin directory.
     

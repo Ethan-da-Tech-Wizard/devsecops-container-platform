@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-"""
-==============================================================================
-Program: Test Suite for Deterministic Document Generator (test_twu_docgen.py)
-Programmer: The Maintainer <maintainer@example.invalid>
-Organization: TWU LLC
-License: MIT License 2026
-Purpose: Validate static AST parsing, Dockerfile directive extraction, GitHub
-         Actions workflow parsing, and whitepaper synthesis logic with zero
-         network calls and zero external dependencies.
+# ==============================================================================
+# Program: test_twu_docgen.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive unit test suite for twu_docgen.py verifying static AST
+#          parsing, Dockerfile directive extraction, CI/CD workflow security inspection,
+#          and deterministic whitepaper synthesis without network dependencies.
+# ==============================================================================
 
-Threat Model & Regression Vectors Tested:
-  - Regression in Dockerfile Security Parsing: Ensures detection of non-root users,
-    exec-form entrypoints, multi-stage stages, and healthcheck probes.
-  - Regression in CI/CD Workflow Inspection: Verifies accurate detection of ShellCheck,
-    Bandit SAST, Trivy scanner, and Python version matrices.
-  - Exception Handling on Malformed Paths: Asserts ValueError on invalid directories.
-==============================================================================
-"""
-
+from __future__ import annotations
 import json
 import os
 import shutil
@@ -43,6 +34,7 @@ class TestDocgen(unittest.TestCase):
         """Cleans up the temporary directory after each test."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
+    # Step 1: Verify defensive path validation and exception throwing
     def test_invalid_directory_raises(self):
         """Verifies that an unresolvable or nonexistent directory raises ValueError."""
         with self.assertRaises(ValueError):
