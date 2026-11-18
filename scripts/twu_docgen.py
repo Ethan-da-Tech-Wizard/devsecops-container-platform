@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: devsecops-container-platform - twu_docgen.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that reads a repository (Dockerfile, GitHub Actions workflows, Python scripts) without running anything and writes a Markdown whitepaper, quick-start runbook, or JSON summary.
 """
 ==============================================================================
 Program: Deterministic Technical Document & Whitepaper Generator (twu_docgen)
@@ -35,14 +39,18 @@ Senior Interview Talking Points:
 ==============================================================================
 """
 
+# Beginner note: this makes type hints be read lazily (as text) so older Python versions accept them.
 from __future__ import annotations
 
+# Standard library imports only: argparse reads command-line options, ast parses Python safely,
+# json prints data, re does pattern matching, sys gives exit codes and error output.
 import argparse
 import ast
 import json
 import os
 import re
 import sys
+# Path gives us safe, cross-platform file paths; typing names are only used for type hints.
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -51,6 +59,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # 1. Static Project Analyzer (Zero Network, Stdlib-Only)
 # ==============================================================================
 
+# This class does the READING: it looks at files and collects facts into dictionaries.
 class ProjectAnalyzer:
     """Statically analyzes repository components to extract architectural metadata.
     
@@ -58,6 +67,7 @@ class ProjectAnalyzer:
     guaranteeing zero network egress and zero execution of analyzed code files.
     """
 
+    # The constructor runs when you write ProjectAnalyzer(path).
     def __init__(self, root: Path):
         """Initializes the project analyzer with a resolved target root directory.
         
@@ -67,14 +77,17 @@ class ProjectAnalyzer:
         Raises:
             ValueError: If the resolved path does not exist or is not a directory.
         """
+        # Remember the full, cleaned-up absolute path of the project folder.
         # Resolve target root directory into an absolute, normalized filesystem path
         # Attack Vector Prevented: Path traversal via unnormalized relative paths (e.g. ../../)
         self.root = root.resolve()
         
         # Ensure target root directory actually exists and is a directory
+        # Stop early with a clear error if the folder is missing, so later code can assume it exists.
         if not self.root.is_dir():
             raise ValueError(f"Project path does not exist or is not a directory: {self.root}")
 
+    # Reads the Dockerfile and reports security-relevant facts about it.
     def inspect_dockerfile(self, dockerfile_path: Optional[Path] = None) -> Dict[str, Any]:
         """Parses Dockerfile directives to detect multi-stage builds, non-root users, and security flags.
         
@@ -87,7 +100,9 @@ class ProjectAnalyzer:
         Returns:
             Dictionary containing extracted container security and build configuration metadata.
         """
+        # Use the path the caller gave us, or fall back to <project root>/Dockerfile.
         target = dockerfile_path or (self.root / "Dockerfile")
+        # 'info' is the result dictionary; it starts with empty/default answers that we fill in below.
         info: Dict[str, Any] = {
             "present": False,
             "stages": [],
@@ -98,52 +113,70 @@ class ProjectAnalyzer:
             "security_features": []
         }
         
+        # No Dockerfile? Hand back the empty defaults (present=False).
         # If no Dockerfile exists, return clean empty baseline structure
         if not target.is_file():
             return info
 
+        # We found the file, so mark it present and load its text (bad bytes are replaced, not fatal).
         info["present"] = True
         content = target.read_text(encoding="utf-8", errors="replace")
 
+        # Go through the Dockerfile one line at a time.
         # Scan each line in the Dockerfile for key security and architecture directives
         for line in content.splitlines():
+            # Trim leading/trailing spaces so startswith checks are reliable.
             line_clean = line.strip()
             
             # Detect FROM directives and multi-stage aliases
             # e.g., 'FROM python:3.12-slim-bookworm AS builder'
+            # FROM lines choose the base image; 'AS name' names a build stage.
             if line_clean.startswith("FROM "):
+                # Split the line into words; word 2 is the image name.
                 parts = line_clean.split()
                 if len(parts) >= 2:
+                    # Save the base image name.
                     info["base_images"].append(parts[1])
+                # If the line contains 'AS', the word after it is the stage name (we compare in upper case to ignore case).
                 if "AS " in line_clean.upper():
                     stage_name = line_clean.upper().split("AS ")[-1].strip().split()[0]
                     info["stages"].append(stage_name.lower())
 
             # Detect least-privilege non-root user assignments
             # e.g., 'USER appuser:appgroup'
+            # USER sets which account the container runs as; a non-root user is safer.
             elif line_clean.startswith("USER "):
+                # Record the user name (the word after USER).
                 info["non_root_user"] = line_clean.split()[1]
+                # Add a human-readable note describing this security feature.
                 info["security_features"].append(f"Least-privilege execution as non-root: {info['non_root_user']}")
 
             # Detect built-in container healthcheck directives
             # e.g., 'HEALTHCHECK --interval=30s ...'
+            # HEALTHCHECK tells Docker how to test that the container is still working.
             elif line_clean.startswith("HEALTHCHECK "):
                 info["has_healthcheck"] = True
                 info["security_features"].append("Active container runtime health checking configured")
 
             # Detect exec-form entrypoints for proper signal delegation
             # e.g., 'ENTRYPOINT ["python3"]'
+            # ENTRYPOINT is the command the container starts with.
             elif line_clean.startswith("ENTRYPOINT "):
+                # Keep the whole line for reporting.
                 info["entrypoint"] = line_clean
+                # A '[' means the JSON 'exec form', which lets the program receive stop signals directly.
                 if "[" in line_clean:
                     info["security_features"].append("Exec-form entrypoint array preserves POSIX PID 1 signal handling")
 
+        # More than one stage means a multi-stage build (build tools stay out of the final image).
         # Check for multi-stage build pattern
         if len(info["stages"]) > 1:
             info["security_features"].append(f"Multi-stage build separation ({' -> '.join(info['stages'])}) strips compilers from runtime")
 
+        # Give the finished facts back to the caller.
         return info
 
+    # Reads every GitHub Actions workflow file and summarizes what it checks.
     def inspect_workflows(self) -> List[Dict[str, Any]]:
         """Parses GitHub Actions CI/CD workflows to identify security gates and test matrices.
         
@@ -153,14 +186,19 @@ class ProjectAnalyzer:
         Returns:
             List of dictionaries, each describing a workflow's security gates and execution jobs.
         """
+        # Workflows live in .github/workflows; the list below collects one summary per file.
         workflows_dir = self.root / ".github" / "workflows"
         workflows: List[Dict[str, Any]] = []
+        # No such folder means no workflows, so return the empty list.
         if not workflows_dir.is_dir():
             return workflows
 
+        # sorted() makes the order the same every run (deterministic output).
         # Iterate over all YAML workflow definition files in alphabetical order
         for yml_file in sorted(workflows_dir.glob("*.y*ml")):
+            # Read the whole YAML file as plain text; we search it with simple text/regex checks, not a YAML parser.
             text = yml_file.read_text(encoding="utf-8", errors="replace")
+            # Summary for this one workflow; the name defaults to the file name without extension.
             wf: Dict[str, Any] = {
                 "file": yml_file.name,
                 "name": yml_file.stem,
@@ -169,11 +207,13 @@ class ProjectAnalyzer:
                 "matrix_versions": []
             }
 
+            # A line starting with 'name:' is the workflow's display title; strip quotes around it.
             # Extract workflow display name if present
             name_match = re.search(r"^name:\s*(.+)$", text, re.MULTILINE)
             if name_match:
                 wf["name"] = name_match.group(1).strip().strip("'\"")
 
+            # Case-insensitive keyword checks: if a tool name appears, record that this gate exists.
             # Detect static analysis and security scanning tools
             if "shellcheck" in text.lower():
                 wf["security_scans"].append("ShellCheck static shell script linting")
@@ -186,20 +226,24 @@ class ProjectAnalyzer:
             if "sbom" in text.lower() or "spdx" in text.lower():
                 wf["security_scans"].append("SPDX-JSON Software Bill of Materials (SBOM) generation")
 
+            # Look for a line like python-version: [3.10, 3.11] and split it into a list of version strings.
             # Detect Python matrix versions (e.g. ["3.10", "3.11", "3.12", "3.13"])
             matrix_match = re.search(r"python-version:\s*\[(.*?)\]", text)
             if matrix_match:
                 raw_versions = matrix_match.group(1).split(",")
                 wf["matrix_versions"] = [v.strip().strip("'\"") for v in raw_versions if v.strip()]
 
+            # Job names are keys indented by exactly two spaces; 'strategy' is a setting, not a job, so skip it.
             # Detect job identifiers declared at 2-space indentation under jobs:
             jobs_match = re.findall(r"^  ([a-zA-Z0-9_-]+):", text, re.MULTILINE)
             wf["jobs"] = [j for j in jobs_match if j != "strategy"]
 
+            # Add this workflow's summary to the overall list.
             workflows.append(wf)
 
         return workflows
 
+    # Looks at the project's Python scripts and records what each one does, without running them.
     def inspect_python_scripts(self) -> List[Dict[str, Any]]:
         """Statically inspects Python scripts to detect security mechanisms and docstrings.
         
@@ -209,31 +253,41 @@ class ProjectAnalyzer:
         Returns:
             List of dictionaries describing Python script paths, docstrings, and security features.
         """
+        # Prefer the scripts/ folder; otherwise scan the project root.
         scripts_dir = self.root / "scripts"
         results: List[Dict[str, Any]] = []
         target_dir = scripts_dir if scripts_dir.is_dir() else self.root
 
+        # Visit every .py file in a stable (sorted) order.
         for py_file in sorted(target_dir.glob("*.py")):
+            # Tests are not features, so skip files named test_*.
             # Exclude test files from script feature cataloging
             if py_file.name.startswith("test_"):
                 continue
+            # Read the script as text.
             src = py_file.read_text(encoding="utf-8", errors="replace")
+            # Facts about this script: name, relative path, first docstring line, and detected features.
             meta: Dict[str, Any] = {
                 "name": py_file.name,
                 "path": str(py_file.relative_to(self.root)),
                 "docstring": "",
                 "features": []
             }
+            # ast.parse only builds a tree of the code; it never runs it.
             try:
                 # Parse code into Abstract Syntax Tree (AST) without evaluating/executing it
                 tree = ast.parse(src)
+                # get_docstring returns the module's docstring (or None).
                 doc = ast.get_docstring(tree)
                 if doc:
+                    # Keep only the first line as a short description.
                     meta["docstring"] = doc.splitlines()[0].strip()
+            # A file with a syntax error just gets an empty description.
             except Exception:
                 # If AST parsing encounters a syntax anomaly, fail gracefully
                 pass
 
+            # The next three checks are simple keyword searches in the source text (a heuristic, not proof).
             # Detect network socket operations
             if "socket.socket" in src or "bind(" in src:
                 meta["features"].append("Network socket service")
@@ -244,8 +298,10 @@ class ProjectAnalyzer:
             if "yara.compile" in src or "clamscan" in src:
                 meta["features"].append("Threat signature scanning engine")
 
+            # Save this script's facts.
             results.append(meta)
 
+        # Return everything found.
         return results
 
 
@@ -253,6 +309,7 @@ class ProjectAnalyzer:
 # 2. Deterministic Technical Whitepaper Synthesis
 # ==============================================================================
 
+# This class does the WRITING: it turns the analyzer's facts into Markdown text.
 class WhitepaperGenerator:
     """Generates standardized, audit-ready technical architecture whitepapers.
     
@@ -261,6 +318,7 @@ class WhitepaperGenerator:
     and STAR-method interview narratives.
     """
 
+    # Constructor: keep a reference to the analyzer so we can ask it for facts.
     def __init__(self, analyzer: ProjectAnalyzer):
         """Initializes generator with an inspected project analyzer instance."""
         self.analyzer = analyzer
@@ -274,13 +332,17 @@ class WhitepaperGenerator:
         Returns:
             Complete Markdown string of the generated technical whitepaper.
         """
+        # Gather all the facts first.
         docker_info = self.analyzer.inspect_dockerfile()
         workflows = self.analyzer.inspect_workflows()
         scripts = self.analyzer.inspect_python_scripts()
+        # The folder name is used as the project name in the document.
         project_name = self.analyzer.root.name
 
+        # 'doc' is a list of text lines; we join them with newlines at the end.
         doc: List[str] = []
 
+        # Title block with fixed metadata (two trailing spaces make a Markdown line break).
         # Document Header & Governance Metadata
         doc.append(f"# {title}")
         doc.append("")
@@ -294,6 +356,7 @@ class WhitepaperGenerator:
         doc.append("---")
         doc.append("")
 
+        # Section 1: a fixed introduction using the project name.
         # Section 1: Executive Summary
         doc.append("## 1. Executive Summary")
         doc.append("")
@@ -303,9 +366,11 @@ class WhitepaperGenerator:
                    "pipeline validation stages, and concrete interview talking points for infrastructure review.")
         doc.append("")
 
+        # Section 2: describes the Dockerfile if one was found.
         # Section 2: Component Architecture & Container Hardening
         doc.append("## 2. Container Architecture & Least-Privilege Hardening")
         doc.append("")
+        # Show Dockerfile facts; 'or' supplies a fallback text when a value is empty.
         if docker_info["present"]:
             doc.append(f"- **Base Image Profile:** `{', '.join(docker_info['base_images'])}`")
             doc.append(f"- **Build Topology:** Multi-stage isolation with stages `{', '.join(docker_info['stages']) or 'single'}`")
@@ -313,12 +378,15 @@ class WhitepaperGenerator:
             doc.append(f"- **Healthcheck Status:** `{'Active' if docker_info['has_healthcheck'] else 'Not declared'}`")
             doc.append("")
             doc.append("### Verified Security Controls:")
+            # List each detected security feature.
             for feat in docker_info["security_features"]:
                 doc.append(f"1. **{feat.split(':')[0]}**: {feat}")
         else:
+            # No Dockerfile, so say so.
             doc.append("No Dockerfile detected in project root. Host execution baseline applied.")
         doc.append("")
 
+        # Section 3: describe every workflow found.
         # Section 3: CI/CD Pipeline & DevSecOps Verification Stages
         doc.append("## 3. Automated DevSecOps Pipeline & Quality Gates")
         doc.append("")
@@ -336,6 +404,7 @@ class WhitepaperGenerator:
             doc.append("No GitHub Actions workflows detected in `.github/workflows/`.")
         doc.append("")
 
+        # Section 4: a fixed threat table (this text is written into the generator, not detected from the repo).
         # Section 4: Supply Chain Threat Model
         doc.append("## 4. Supply Chain Threat Model & Mitigations")
         doc.append("")
@@ -349,6 +418,7 @@ class WhitepaperGenerator:
         doc.append("| Malicious Detection Rules | Tampered or corrupted threat rules bypass defenses | Compile-time cryptographic YARA rule verification gate |")
         doc.append("")
 
+        # Section 5: fixed interview talking points in STAR form (Situation, Task, Action, Result).
         # Section 5: STAR Interview Talking Points
         doc.append("## 5. Senior Engineering Interview Talking Points (STAR Method)")
         doc.append("")
@@ -359,17 +429,21 @@ class WhitepaperGenerator:
         doc.append("- **Result:** Established a shift-left DevSecOps platform where 100% of commits are validated through automated static analysis, container vulnerability gating, and multi-version certification with zero manual intervention required.")
         doc.append("")
 
+        # Join all lines into one string and return it.
         return "\n".join(doc)
 
+    # Builds a second, shorter document: how to run and test the project.
     def generate_quickstart(self) -> str:
         """Generates a foolproof quick-start runbook with verification commands.
         
         Returns:
             Markdown formatted quick-start guide.
         """
+        # Name and Dockerfile facts decide what the runbook includes.
         project_name = self.analyzer.root.name
         docker_info = self.analyzer.inspect_dockerfile()
 
+        # Fixed command lines for the reader to copy and run.
         doc: List[str] = []
         doc.append(f"# Quick Start Runbook: {project_name}")
         doc.append("")
@@ -392,6 +466,7 @@ class WhitepaperGenerator:
         doc.append("python3 -m unittest discover -s scripts/ -p \"test_*.py\"")
         doc.append("```")
         doc.append("")
+        # Only show container steps if a Dockerfile exists.
         if docker_info["present"]:
             doc.append("## 3. Container Build & Smoke Test")
             doc.append("```bash")
@@ -410,34 +485,44 @@ class WhitepaperGenerator:
 # 3. Command Line Interface Entrypoint
 # ==============================================================================
 
+# main() is the program's front door; passing argv=None means 'use the real command line'.
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI entrypoint for twu_docgen. Parses arguments and executes commands."""
+    # Set up the command-line parser.
     parser = argparse.ArgumentParser(
         description="Deterministic Technical Document & Whitepaper Generator (twu_docgen)"
     )
+    # Choose one of three sub-commands; one is required.
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # 'analyze' prints the raw facts as JSON.
     # Subcommand: analyze
     sub_analyze = subparsers.add_parser("analyze", help="Inspect and display extracted project metadata in JSON")
     sub_analyze.add_argument("--path", default=".", help="Target project root directory (default: current directory)")
 
+    # 'whitepaper' writes the full Markdown document.
     # Subcommand: whitepaper
     sub_whitepaper = subparsers.add_parser("whitepaper", help="Synthesize a comprehensive technical architecture whitepaper")
     sub_whitepaper.add_argument("--path", default=".", help="Target project root directory")
     sub_whitepaper.add_argument("--output", help="Optional output filepath to save Markdown whitepaper")
     sub_whitepaper.add_argument("--title", default="Platform Architecture & DevSecOps Technical Whitepaper", help="Whitepaper title")
 
+    # 'quickstart' writes the runbook.
     # Subcommand: quickstart
     sub_quickstart = subparsers.add_parser("quickstart", help="Generate a foolproof quick-start runbook")
     sub_quickstart.add_argument("--path", default=".", help="Target project root directory")
     sub_quickstart.add_argument("--output", help="Optional output filepath to save Markdown runbook")
 
+    # Read what the user typed.
     args = parser.parse_args(argv)
 
+    # Any error below is printed to stderr and returns exit code 1.
     try:
+        # Build the reader and the writer.
         analyzer = ProjectAnalyzer(Path(args.path))
         generator = WhitepaperGenerator(analyzer)
 
+        # analyze: bundle all facts and print them as indented JSON.
         if args.command == "analyze":
             data = {
                 "project": analyzer.root.name,
@@ -448,6 +533,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps(data, indent=2))
             return 0
 
+        # whitepaper: generate the text, then save it (creating folders if needed) or print it.
         elif args.command == "whitepaper":
             content = generator.generate(title=args.title)
             if args.output:
@@ -459,6 +545,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(content)
             return 0
 
+        # quickstart: same idea as whitepaper but for the runbook.
         elif args.command == "quickstart":
             content = generator.generate_quickstart()
             if args.output:
@@ -470,12 +557,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(content)
             return 0
 
+    # Report failures to the error stream and signal failure with exit code 1.
     except Exception as exc:
         sys.stderr.write(f"twu_docgen error: {exc}\n")
         return 1
 
+    # Fallback exit code 0 (success).
     return 0
 
 
+# Run main() only when executed as a script, not when imported (the tests import this file).
 if __name__ == "__main__":
     sys.exit(main())
