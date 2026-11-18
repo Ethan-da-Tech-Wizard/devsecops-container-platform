@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: devsecops-container-platform - test_twu_docgen.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unit tests (unittest) that check twu_docgen finds Dockerfile and workflow facts correctly and produces the expected whitepaper and quick-start text.
 """
 ==============================================================================
 Program: Test Suite for Deterministic Document Generator (test_twu_docgen.py)
@@ -18,6 +22,7 @@ Threat Model & Regression Vectors Tested:
 ==============================================================================
 """
 
+# Imports: standard testing tools plus tempfile/shutil to make and delete throwaway folders.
 import json
 import os
 import shutil
@@ -26,28 +31,34 @@ import unittest
 from pathlib import Path
 import sys
 
+# Add this scripts folder to Python's search path so 'import twu_docgen' finds the file next to this one.
 # Ensure local scripts directory is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import twu_docgen
 
 
+# Each method starting with test_ is run automatically by unittest.
 class TestDocgen(unittest.TestCase):
     """Unit test suite verifying deterministic AST document generation."""
 
+    # setUp runs before every test: make a fresh empty temporary folder.
     def setUp(self):
         """Creates an isolated temporary test directory before each test."""
         self.test_dir = tempfile.mkdtemp(prefix="twu-docgen-test-")
         self.root = Path(self.test_dir)
 
+    # tearDown runs after every test: delete that folder so tests do not affect each other.
     def tearDown(self):
         """Cleans up the temporary directory after each test."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
+    # Asking for a folder that does not exist must raise ValueError.
     def test_invalid_directory_raises(self):
         """Verifies that an unresolvable or nonexistent directory raises ValueError."""
         with self.assertRaises(ValueError):
             twu_docgen.ProjectAnalyzer(self.root / "nonexistent_dir_123")
 
+    # Build a fake Dockerfile with two stages, a user, a healthcheck and an entrypoint.
     def test_dockerfile_analysis(self):
         """Verifies extraction of base images, stages, non-root user, and healthcheck from Dockerfile."""
         dockerfile = self.root / "Dockerfile"
@@ -60,6 +71,7 @@ class TestDocgen(unittest.TestCase):
             "ENTRYPOINT [\"python3\"]\n",
             encoding="utf-8"
         )
+        # Analyze it, then check each expected fact was found.
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         info = analyzer.inspect_dockerfile()
 
@@ -70,6 +82,7 @@ class TestDocgen(unittest.TestCase):
         self.assertTrue(info["has_healthcheck"])
         self.assertTrue(any("Exec-form" in feat for feat in info["security_features"]))
 
+    # Write a small fake workflow file that mentions shellcheck, bandit, trivy and a Python matrix.
     def test_workflows_analysis(self):
         """Verifies parsing of GitHub Actions workflow jobs, tools, and python-version matrices."""
         wf_dir = self.root / ".github" / "workflows"
@@ -91,6 +104,7 @@ class TestDocgen(unittest.TestCase):
             "        python-version: ['3.10', '3.12']\n",
             encoding="utf-8"
         )
+        # Analyze it and check the name, jobs, versions and detected scanners.
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         workflows = analyzer.inspect_workflows()
 
@@ -105,6 +119,7 @@ class TestDocgen(unittest.TestCase):
         self.assertTrue(any("Bandit" in s for s in wf["security_scans"]))
         self.assertTrue(any("Trivy" in s for s in wf["security_scans"]))
 
+    # An empty folder is enough: the whitepaper text is mostly fixed headings.
     def test_whitepaper_synthesis(self):
         """Verifies deterministic synthesis of executive summary, threat model, and STAR interview sections."""
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
@@ -116,6 +131,7 @@ class TestDocgen(unittest.TestCase):
         self.assertIn("## 4. Supply Chain Threat Model", doc)
         self.assertIn("## 5. Senior Engineering Interview Talking Points (STAR Method)", doc)
 
+    # The quick-start should mention the key verification commands.
     def test_quickstart_synthesis(self):
         """Verifies generation of quickstart runbook containing shellcheck, compileall, and test commands."""
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
@@ -127,5 +143,6 @@ class TestDocgen(unittest.TestCase):
         self.assertIn("compileall", qs)
 
 
+# Lets you run this file directly to execute the tests.
 if __name__ == "__main__":
     unittest.main()
