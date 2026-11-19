@@ -8,8 +8,10 @@
 #          to synthesize audit-ready technical whitepapers and ADR catalogues.
 # ==============================================================================
 
+# Deferred annotation evaluation (PEP 563) for modern type-hint syntax on older Pythons.
 from __future__ import annotations
 
+# Stdlib only: the generator must be runnable offline and never execute analysed code.
 import argparse
 import ast
 import json
@@ -61,7 +63,9 @@ class ProjectAnalyzer:
         Returns:
             Dictionary containing extracted container security and build configuration metadata.
         """
+        # Default to the Dockerfile at the repository root.
         target = dockerfile_path or (self.root / "Dockerfile")
+        # Result skeleton; returned as-is (present=False) when no Dockerfile exists.
         info: Dict[str, Any] = {
             "present": False,
             "stages": [],
@@ -77,6 +81,7 @@ class ProjectAnalyzer:
             return info
 
         info["present"] = True
+        # errors=replace so a stray non-UTF-8 byte cannot abort the analysis.
         content = target.read_text(encoding="utf-8", errors="replace")
 
         # Scan each line in the Dockerfile for key security and architecture directives
@@ -90,6 +95,8 @@ class ProjectAnalyzer:
                 if len(parts) >= 2:
                     info["base_images"].append(parts[1])
                 if "AS " in line_clean.upper():
+                    # Stage alias is the token after 'AS'; upper-casing first makes the match case-insensitive,
+                    # and the name is lower-cased again when stored.
                     stage_name = line_clean.upper().split("AS ")[-1].strip().split()[0]
                     info["stages"].append(stage_name.lower())
 
@@ -113,6 +120,7 @@ class ProjectAnalyzer:
                     info["security_features"].append("Exec-form entrypoint array preserves POSIX PID 1 signal handling")
 
         # Check for multi-stage build pattern
+        # More than one named stage means build tooling can be left out of the final image.
         if len(info["stages"]) > 1:
             info["security_features"].append(f"Multi-stage build separation ({' -> '.join(info['stages'])}) strips compilers from runtime")
 
@@ -127,6 +135,7 @@ class ProjectAnalyzer:
         Returns:
             List of dictionaries, each describing a workflow's security gates and execution jobs.
         """
+        # GitHub Actions workflow definitions live here.
         workflows_dir = self.root / ".github" / "workflows"
         workflows: List[Dict[str, Any]] = []
         if not workflows_dir.is_dir():
@@ -135,6 +144,7 @@ class ProjectAnalyzer:
         # Iterate over all YAML workflow definition files in alphabetical order
         for yml_file in sorted(workflows_dir.glob("*.y*ml")):
             text = yml_file.read_text(encoding="utf-8", errors="replace")
+            # Per-workflow record; name defaults to the file stem until a `name:` key overrides it.
             wf: Dict[str, Any] = {
                 "file": yml_file.name,
                 "name": yml_file.stem,
@@ -144,11 +154,14 @@ class ProjectAnalyzer:
             }
 
             # Extract workflow display name if present
+            # Only a top-level (column 0) `name:` is the workflow name; indented ones belong to steps.
             name_match = re.search(r"^name:\s*(.+)$", text, re.MULTILINE)
             if name_match:
                 wf["name"] = name_match.group(1).strip().strip("'\"")
 
             # Detect static analysis and security scanning tools
+            # Tool detection is a case-insensitive substring match on the raw YAML, not a YAML parse:
+            # cheap and dependency-free, at the cost of also matching mentions in comments.
             if "shellcheck" in text.lower():
                 wf["security_scans"].append("ShellCheck static shell script linting")
             if "bandit" in text.lower():
@@ -167,6 +180,7 @@ class ProjectAnalyzer:
                 wf["matrix_versions"] = [v.strip().strip("'\"") for v in raw_versions if v.strip()]
 
             # Detect job identifiers declared at 2-space indentation under jobs:
+            # Heuristic: two-space-indented keys. 'strategy' is filtered below because it can appear at that depth without being a job.
             jobs_match = re.findall(r"^  ([a-zA-Z0-9_-]+):", text, re.MULTILINE)
             wf["jobs"] = [j for j in jobs_match if j != "strategy"]
 
@@ -183,6 +197,7 @@ class ProjectAnalyzer:
         Returns:
             List of dictionaries describing Python script paths, docstrings, and security features.
         """
+        # Prefer ./scripts; fall back to scanning the root if the project has no scripts directory.
         scripts_dir = self.root / "scripts"
         results: List[Dict[str, Any]] = []
         target_dir = scripts_dir if scripts_dir.is_dir() else self.root
@@ -200,6 +215,7 @@ class ProjectAnalyzer:
             }
             try:
                 # Parse code into Abstract Syntax Tree (AST) without evaluating/executing it
+                # ast.parse only builds a tree; the file is never imported or run.
                 tree = ast.parse(src)
                 doc = ast.get_docstring(tree)
                 if doc:
@@ -209,6 +225,7 @@ class ProjectAnalyzer:
                 pass
 
             # Detect network socket operations
+            # Feature detection below is substring-based and therefore heuristic.
             if "socket.socket" in src or "bind(" in src:
                 meta["features"].append("Network socket service")
             # Detect kernel sandboxing / isolation mechanisms
@@ -248,15 +265,18 @@ class WhitepaperGenerator:
         Returns:
             Complete Markdown string of the generated technical whitepaper.
         """
+        # Gather all facts first so the rendering below is pure formatting.
         docker_info = self.analyzer.inspect_dockerfile()
         workflows = self.analyzer.inspect_workflows()
         scripts = self.analyzer.inspect_python_scripts()
+        # The directory name stands in for the project name.
         project_name = self.analyzer.root.name
 
         # Architecture Pattern: Structured deterministic whitepaper synthesis
         # Formatted according to Michael Nygard ADR structure and Microsoft STRIDE threat modeling.
         # Markdown strings are assembled via array accumulation rather than string concatenation
         # to ensure linear O(N) complexity and optimal memory utilization across large repositories.
+        # Accumulate lines and join once at the end.
         doc: List[str] = []
 
         # Document Header & Governance Metadata
@@ -394,6 +414,7 @@ class WhitepaperGenerator:
 
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI entrypoint for twu_docgen. Parses arguments and executes commands."""
+    # Three subcommands share a --path option: analyze (JSON), whitepaper and quickstart (Markdown).
     parser = argparse.ArgumentParser(
         description="Deterministic Technical Document & Whitepaper Generator (twu_docgen)"
     )
@@ -414,9 +435,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub_quickstart.add_argument("--path", default=".", help="Target project root directory")
     sub_quickstart.add_argument("--output", help="Optional output filepath to save Markdown runbook")
 
+    # argv=None means sys.argv; tests pass an explicit list.
     args = parser.parse_args(argv)
 
     try:
+        # Any failure (e.g. bad path) is reported on stderr with exit code 1 instead of a traceback.
         analyzer = ProjectAnalyzer(Path(args.path))
         generator = WhitepaperGenerator(analyzer)
 
@@ -434,6 +457,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             content = generator.generate(title=args.title)
             if args.output:
                 out_path = Path(args.output)
+                # Create missing parent directories so --output works for new paths.
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 out_path.write_text(content, encoding="utf-8")
                 print(f"Generated whitepaper saved to: {out_path}")

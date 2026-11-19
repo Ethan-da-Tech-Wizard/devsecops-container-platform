@@ -8,6 +8,7 @@
 #          and deterministic whitepaper synthesis without network dependencies.
 # ==============================================================================
 
+# Deferred annotations, matching the module under test.
 from __future__ import annotations
 import json
 import os
@@ -18,6 +19,7 @@ from pathlib import Path
 import sys
 
 # Ensure local scripts directory is importable
+# Scripts are not an installed package, so put this directory on sys.path first.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import twu_docgen
 
@@ -27,6 +29,7 @@ class TestDocgen(unittest.TestCase):
 
     def setUp(self):
         """Creates an isolated temporary test directory before each test."""
+        # Fresh scratch project per test so fixtures never leak between cases.
         self.test_dir = tempfile.mkdtemp(prefix="twu-docgen-test-")
         self.root = Path(self.test_dir)
 
@@ -42,6 +45,7 @@ class TestDocgen(unittest.TestCase):
 
     def test_dockerfile_analysis(self):
         """Verifies extraction of base images, stages, non-root user, and healthcheck from Dockerfile."""
+        # Fixture: a two-stage Dockerfile with a non-root user, healthcheck and exec-form entrypoint.
         dockerfile = self.root / "Dockerfile"
         dockerfile.write_text(
             "FROM python:3.12-slim-bookworm AS builder\n"
@@ -56,6 +60,7 @@ class TestDocgen(unittest.TestCase):
         info = analyzer.inspect_dockerfile()
 
         self.assertTrue(info["present"])
+        # Stage names are stored lower-cased.
         self.assertIn("builder", info["stages"])
         self.assertIn("runtime", info["stages"])
         self.assertEqual(info["non_root_user"], "appuser:appgroup")
@@ -66,6 +71,7 @@ class TestDocgen(unittest.TestCase):
         """Verifies parsing of GitHub Actions workflow jobs, tools, and python-version matrices."""
         wf_dir = self.root / ".github" / "workflows"
         wf_dir.mkdir(parents=True, exist_ok=True)
+        # Fixture workflow: three jobs (lint, scan, test) plus a python-version matrix; the `strategy` key must not be counted as a job.
         ci_yml = wf_dir / "ci.yml"
         ci_yml.write_text(
             "name: DevSecOps CI\n"
@@ -86,6 +92,7 @@ class TestDocgen(unittest.TestCase):
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         workflows = analyzer.inspect_workflows()
 
+        # Exactly one workflow file was created, so exactly one record is expected.
         self.assertEqual(len(workflows), 1)
         wf = workflows[0]
         self.assertEqual(wf["name"], "DevSecOps CI")
@@ -99,6 +106,7 @@ class TestDocgen(unittest.TestCase):
 
     def test_whitepaper_synthesis(self):
         """Verifies deterministic synthesis of executive summary, threat model, and STAR interview sections."""
+        # An empty project is enough: the whitepaper text is static apart from detected facts.
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         generator = twu_docgen.WhitepaperGenerator(analyzer)
         doc = generator.generate()
