@@ -25,7 +25,13 @@ import twu_docgen
 
 
 class TestDocgen(unittest.TestCase):
-    """Unit test suite verifying deterministic AST document generation."""
+    """Unit test suite verifying deterministic AST document generation.
+
+    The module under test (twu_docgen.py) reads a project folder statically (it never runs
+    Docker or GitHub Actions) and renders Markdown. Each test builds a minimal fake project
+    in a temp directory, so results depend only on the fixture text, never on this repo's files.
+    Run: python3 -m unittest discover -s scripts/ -p "test_*.py" (same command as CI).
+    """
 
     def setUp(self):
         """Creates an isolated temporary test directory before each test."""
@@ -37,14 +43,24 @@ class TestDocgen(unittest.TestCase):
         """Cleans up the temporary directory after each test."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    # Step 1: Verify defensive path validation and exception throwing
+    # Input validation comes first: the analyzer must refuse a bad root up front instead of
+    # producing an empty (and misleading) report later.
     def test_invalid_directory_raises(self):
-        """Verifies that an unresolvable or nonexistent directory raises ValueError."""
+        """Verifies that an unresolvable or nonexistent directory raises ValueError.
+
+        Scenario: a path that does not exist under the temp dir. Why it matters: a typo in the
+        CLI argument must fail loudly rather than document an empty project.
+        """
         with self.assertRaises(ValueError):
             twu_docgen.ProjectAnalyzer(self.root / "nonexistent_dir_123")
 
     def test_dockerfile_analysis(self):
-        """Verifies extraction of base images, stages, non-root user, and healthcheck from Dockerfile."""
+        """Verifies extraction of base images, stages, non-root user, and healthcheck from Dockerfile.
+
+        Scenario: two stages (builder, runtime), USER appuser:appgroup, a HEALTHCHECK and an exec-form
+        ENTRYPOINT. Why it matters: these facts feed the whitepaper's security-posture claims, so
+        they must come from the file, not from assumptions.
+        """
         # Fixture: a two-stage Dockerfile with a non-root user, healthcheck and exec-form entrypoint.
         dockerfile = self.root / "Dockerfile"
         dockerfile.write_text(
@@ -68,7 +84,12 @@ class TestDocgen(unittest.TestCase):
         self.assertTrue(any("Exec-form" in feat for feat in info["security_features"]))
 
     def test_workflows_analysis(self):
-        """Verifies parsing of GitHub Actions workflow jobs, tools, and python-version matrices."""
+        """Verifies parsing of GitHub Actions workflow jobs, tools, and python-version matrices.
+
+        Scenario: one workflow with lint/scan/test jobs that invoke shellcheck, bandit and the Trivy
+        action. Why it matters: the document lists which security scanners CI runs; a missed or
+        invented scanner would make the report wrong. The parser is a plain-text scan (no YAML library).
+        """
         wf_dir = self.root / ".github" / "workflows"
         wf_dir.mkdir(parents=True, exist_ok=True)
         # Fixture workflow: three jobs (lint, scan, test) plus a python-version matrix; the `strategy` key must not be counted as a job.
@@ -105,7 +126,10 @@ class TestDocgen(unittest.TestCase):
         self.assertTrue(any("Trivy" in s for s in wf["security_scans"]))
 
     def test_whitepaper_synthesis(self):
-        """Verifies deterministic synthesis of executive summary, threat model, and STAR interview sections."""
+        """Verifies deterministic synthesis of executive summary, threat model, and STAR interview sections.
+
+        Scenario: an empty project. Pins the section headings other docs and readers link to.
+        """
         # An empty project is enough: the whitepaper text is static apart from detected facts.
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         generator = twu_docgen.WhitepaperGenerator(analyzer)
@@ -117,7 +141,11 @@ class TestDocgen(unittest.TestCase):
         self.assertIn("## 5. Senior Engineering Interview Talking Points (STAR Method)", doc)
 
     def test_quickstart_synthesis(self):
-        """Verifies generation of quickstart runbook containing shellcheck, compileall, and test commands."""
+        """Verifies generation of quickstart runbook containing shellcheck, compileall, and test commands.
+
+        Scenario: an empty project; the runbook text is static, so it must always list the
+        validation commands (shellcheck and compileall are asserted; test commands are listed too).
+        """
         analyzer = twu_docgen.ProjectAnalyzer(self.root)
         generator = twu_docgen.WhitepaperGenerator(analyzer)
         qs = generator.generate_quickstart()
