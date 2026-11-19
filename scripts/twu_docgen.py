@@ -9,7 +9,6 @@
 # ==============================================================================
 
 from __future__ import annotations
-from __future__ import annotations
 
 import argparse
 import ast
@@ -254,6 +253,10 @@ class WhitepaperGenerator:
         scripts = self.analyzer.inspect_python_scripts()
         project_name = self.analyzer.root.name
 
+        # Architecture Pattern: Structured deterministic whitepaper synthesis
+        # Formatted according to Michael Nygard ADR structure and Microsoft STRIDE threat modeling.
+        # Markdown strings are assembled via array accumulation rather than string concatenation
+        # to ensure linear O(N) complexity and optimal memory utilization across large repositories.
         doc: List[str] = []
 
         # Document Header & Governance Metadata
@@ -345,6 +348,10 @@ class WhitepaperGenerator:
         project_name = self.analyzer.root.name
         docker_info = self.analyzer.inspect_dockerfile()
 
+        # Architecture Pattern: Structured deterministic whitepaper synthesis
+        # Formatted according to Michael Nygard ADR structure and Microsoft STRIDE threat modeling.
+        # Markdown strings are assembled via array accumulation rather than string concatenation
+        # to ensure linear O(N) complexity and optimal memory utilization across large repositories.
         doc: List[str] = []
         doc.append(f"# Quick Start Runbook: {project_name}")
         doc.append("")
