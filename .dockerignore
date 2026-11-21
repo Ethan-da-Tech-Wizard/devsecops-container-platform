@@ -51,7 +51,7 @@ private/
 
 # Directive: .env*
 # What it does:
-#   Excludes all local environment files (.env, .host.example, .env.development, .env.production).
+#   Excludes all local environment files (.env, .env.local, .env.development, .env.production).
 # Why it is best-practice for security (Crucial Interview Discussion Point):
 #   - Prevents Hardcoded Secrets (CWE-798): Docker container images are immutable and
 #     can be inspected by anyone with read access to the registry via 'docker history'.
