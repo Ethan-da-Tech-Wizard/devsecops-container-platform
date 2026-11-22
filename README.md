@@ -29,6 +29,25 @@ find scripts/ -type f -name "*.sh" -exec shellcheck {} +
 
 Review the [workflow](.github/workflows/devsecops-ci.yml), [Dockerfile](Dockerfile), and dependencies before building or running them. YARA commands that compile or scan rules require the relevant YARA utilities. Historical whitepapers and source comments may contain claims that have not been independently verified; check them against the actual implementation and current test results.
 
+## Visual Walkthrough & Diagnostics
+
+<p align="center">
+  <img src="docs/assets/devsecops_pipeline_execution.svg" alt="DevSecOps Container Audit & Pipeline" width="860">
+</p>
+
+<p align="center">
+  <img src="docs/assets/yara_signature_vetting.svg" alt="YARA Threat Signature Cryptographic Vetting" width="860">
+</p>
+
+## Magi Standards & AI Contributor Onboarding
+
+All container automation scripts, threat vetting tools, and documentation adhere to the **[Magi Bible: Engineering Foundations & Safety Standards for AI Coding](MAGI_BIBLE.md)** and **[MAGI_LOOK_HERE.md](MAGI_LOOK_HERE.md)**:
+- **[MAGI_LOOK_HERE.md](MAGI_LOOK_HERE.md)**: Universal contributor & AI agent onboarding guide, visual walkthrough requirements, zero-PII validation rules.
+- **[MAGI_BIBLE.md](MAGI_BIBLE.md)**: Core engineering foundations, multi-seat governance, and verification checklists.
+- **Rule 16 Commenting Invariant:** Code contains comprehensive structural headers and inline rationale.
+- **Fail-Closed Security:** Container pipelines enforce non-root unprivileged execution (UID 10001) and strict capability drops.
+- **Zero Secrets & Leak-Scrubbed:** Continuous static analysis and secret detection prevent credential disclosure.
+
 ## License
 
 [MIT License](LICENSE).
